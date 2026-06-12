@@ -97,7 +97,7 @@ Two scales, two routes:
 
 When a trigger fires, read `research.md` next to this file and follow it:
 3–5 narrow non-overlapping questions → parallel read-only
-`codex exec --enable web_search` researchers in the background → you
+`codex exec -c web_search="live"` researchers in the background → you
 adversarially verify
 the load-bearing claims → you write `docs/prd/<slice>.md` with citations and
 commit it. Researchers gather; you judge and write the PRD. Findings without a

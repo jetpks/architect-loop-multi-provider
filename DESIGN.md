@@ -224,10 +224,11 @@ Facts the skill encodes — several correct widespread misinformation:
   automations have been reported silently defaulting to older models.
 - **`codex exec` is non-interactive by design** — `-a/--ask-for-approval` and
   `--search` are TUI-only flags that exec rejects (verified live on 0.139).
-  The sandbox flag is the only permission control; web search on exec is
-  `--enable web_search` (older CLIs: `-c tools.web_search=true`). `--full-auto`
-  is deprecated. Because exec flags churn between versions, the skills mandate
-  a one-canary-before-fan-out rule per environment.
+  The sandbox flag is the only permission control. Web search is on by
+  default in current Codex; `-c web_search="live"` forces fresh results
+  (older CLIs: `--enable web_search`, then `-c tools.web_search=true`).
+  `--full-auto` is deprecated. These flags churned three times in 2026 alone —
+  hence the skills' one-canary-before-fan-out rule per environment.
 - **Effort** is `-c model_reasoning_effort="xhigh"` (or `high`), per invocation.
 - **Structured telemetry**: `--json` (JSONL event stream) and
   `-o <file>` / `--output-last-message` for the final message;
@@ -294,7 +295,7 @@ breath (fresh-context judgment, R3).
 ### Optional pre-spec research fan-out
 
 Between judging and speccing, the architect may run a research phase: 3–5
-parallel `codex exec --sandbox read-only --enable web_search` researchers, each
+parallel `codex exec --sandbox read-only -c web_search="live"` researchers, each
 answering one narrow non-overlapping question, with the architect adversarially
 verifying load-bearing claims and writing `docs/prd/<slice>.md` itself. Design
 decisions behind it:

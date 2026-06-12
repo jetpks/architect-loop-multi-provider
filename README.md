@@ -73,7 +73,7 @@ and dispatches a fresh autonomous Codex run that works for hours. Repeat.
 |---|---|---|---|
 | Architect | Claude Fable | `high` (pinned by the skill) | judgment only: arbitration, judging evidence, specs, kill/continue |
 | Builder | GPT-5.5 via `codex exec` | `xhigh` (architect may dial per slice) | implementation, hours at a time, unattended |
-| Researchers | GPT-5.5 via `codex exec --enable web_search` | `high` | gathering only — never recommendations |
+| Researchers | GPT-5.5 via `codex exec -c web_search="live"` | `high` | gathering only — never recommendations |
 | Memory | the repo | — | `docs/HANDOFF.md`, `docs/gates/`, `docs/research/`, git history |
 | You | human | — | read the handoff between blocks; kill/continue authority |
 
@@ -112,7 +112,7 @@ methodology the best deep-research systems converged on:
 - **Brief first** — your question is compressed into a research brief that
   every later step is audited against.
 - **Six lanes, fanned out in parallel** (each a fresh
-  `codex exec --enable web_search`, read-only sandbox):
+  `codex exec -c web_search="live"`, read-only sandbox):
   1. **Academic** — arXiv recency queries + Semantic Scholar citation
      snowballing, survey-first
   2. **Popular repos** — dependents counts as adoption evidence (stars are
