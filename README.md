@@ -48,7 +48,7 @@ that feeds the build loop's PRD.
 
 ## How it works in one picture
 
-![/architect — the loop](docs/announcement/img/loop-diagram.png)
+![/architect — the loop](assets/loop-diagram.png)
 
 One architect session per work block: **rule on disagreements → judge the last
 run's raw evidence against frozen gates → split the next slice into 1–4 lanes
