@@ -1,6 +1,8 @@
 .DS_Store
 Thumbs.db
 *.swp
-/docs/
-/.architect/
-/research/
+
+# Runtime artifacts the skills produce in a target repo (ignored at any depth)
+docs/
+.architect/
+research/
