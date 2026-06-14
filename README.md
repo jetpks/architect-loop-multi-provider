@@ -16,14 +16,14 @@ that directory.
 
 | Directory | Architect | Builder | Builder CLI | What the builder costs |
 |---|---|---|---|---|
-| [`fable/gpt-55`](fable/gpt-55) | Claude Fable | GPT-5.5 Codex | `codex exec` (xhigh) | ChatGPT plan 5-hour / weekly quotas |
+| [`fable-gpt-55`](fable-gpt-55) | Claude Fable | GPT-5.5 Codex | `codex exec` (xhigh) | ChatGPT plan 5-hour / weekly quotas |
 
-The directory layout mirrors the convention `<architect>/<builder>`. More
-provider variants land as they're validated.
+Each directory is named `<architect>-<builder>`. More provider variants land as
+they're validated.
 
 ### Which one?
 
-- **[`fable/gpt-55`](fable/gpt-55)** — you have a ChatGPT plan and want the
+- **[`fable-gpt-55`](fable-gpt-55)** — you have a ChatGPT plan and want the
   builder's hours billed against it. No API keys; uses the Codex CLI.
 
 ## Install
@@ -32,7 +32,7 @@ Each variant installs independently from its own directory:
 
 ```bash
 git clone https://github.com/jetpks/architect-loop-multi-provider
-cd architect-loop-multi-provider/fable/gpt-55   # or another variant directory
+cd architect-loop-multi-provider/fable-gpt-55   # or another variant directory
 ./install.sh                                     # Windows: .\install.ps1
 # then install that variant's builder CLI — see the variant's README
 ```

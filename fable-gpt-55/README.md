@@ -10,7 +10,7 @@ on the subscriptions you already have — no API keys required by default.
 
 ```bash
 git clone https://github.com/jetpks/architect-loop-multi-provider
-cd architect-loop-multi-provider/fable/gpt-55 && ./install.sh   # Windows: .\install.ps1
+cd architect-loop-multi-provider/fable-gpt-55 && ./install.sh   # Windows: .\install.ps1
 npm i -g @openai/codex@latest            # the builder (Codex CLI >= 0.133)
 ```
 
