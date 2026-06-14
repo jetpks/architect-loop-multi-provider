@@ -10,7 +10,7 @@ It runs on the Claude plan you already have — no second CLI, no extra API keys
 
 ```bash
 git clone https://github.com/jetpks/architect-loop-multi-provider
-cd architect-loop-multi-provider/opus-48/sonnet-46 && ./install.sh   # Windows: .\install.ps1
+cd architect-loop-multi-provider/opus-48-sonnet-46 && ./install.sh   # Windows: .\install.ps1
 ```
 
 Both roles are the same `claude` binary: the architect is your interactive

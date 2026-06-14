@@ -17,7 +17,7 @@ that directory.
 | Directory | Architect | Builder | Builder CLI | What the builder costs |
 |---|---|---|---|---|
 | [`fable-gpt-55`](fable-gpt-55) | Claude Fable | GPT-5.5 Codex | `codex exec` (xhigh) | ChatGPT plan 5-hour / weekly quotas |
-| [`opus-48/sonnet-46`](opus-48/sonnet-46) | Opus 4.8 | Sonnet 4.6 | headless `claude -p` | Agent SDK credit pool (same Claude plan) |
+| [`opus-48-sonnet-46`](opus-48-sonnet-46) | Opus 4.8 | Sonnet 4.6 | headless `claude -p` | Agent SDK credit pool (same Claude plan) |
 
 Each directory is named `<architect>-<builder>`. More provider variants land as
 they're validated.
@@ -26,7 +26,7 @@ they're validated.
 
 - **[`fable-gpt-55`](fable-gpt-55)** — you have a ChatGPT plan and want the
   builder's hours billed against it. No API keys; uses the Codex CLI.
-- **[`opus-48/sonnet-46`](opus-48/sonnet-46)** — you want everything on one
+- **[`opus-48-sonnet-46`](opus-48-sonnet-46)** — you want everything on one
   Claude plan and no second CLI. Both roles are the same `claude` binary; the
   builder is headless `claude -p` one tier down.
 
