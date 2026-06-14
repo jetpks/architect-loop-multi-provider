@@ -9,7 +9,7 @@ contexts, and the architect reviews the evidence before anything is integrated.
 
 ```bash
 git clone https://github.com/jetpks/architect-loop-multi-provider
-cd architect-loop-multi-provider/opus-48/minimax-m3 && ./install.sh   # Windows: .\install.ps1
+cd architect-loop-multi-provider/opus-48-minimax-m3 && ./install.sh   # Windows: .\install.ps1
 pi install npm:pi-web-access             # web access for builders/researchers
 ```
 
