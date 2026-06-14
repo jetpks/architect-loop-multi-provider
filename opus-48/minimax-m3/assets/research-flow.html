@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1500px; height:460px; background:#0d1117; font-family:"Cascadia Code",Consolas,monospace; color:#e6edf3; padding:60px 40px; }
+  .row { display:flex; align-items:center; justify-content:center; gap:14px; }
+  .box { border-radius:16px; padding:24px 22px; text-align:center; }
+  .fable { background:#1c1410; border:3px solid #d97757; width:280px; }
+  .codex { background:#0e1a16; border:3px solid #10a37f; width:280px; }
+  .who { font-size:25px; font-weight:700; }
+  .fable .who { color:#d97757; } .codex .who { color:#3fd0a4; }
+  .does { font-size:19px; color:#c9d1d9; margin-top:8px; line-height:1.45; }
+  .arrow { font-size:38px; color:#6e7681; }
+  .lanes { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+  .lane { border:1.5px solid #1f6f58; border-radius:8px; padding:3px 8px; font-size:15px; color:#7ee2c3; background:#0a221b; }
+  .out { background:#1a1607; border:3px solid #e3b341; width:250px; }
+  .out .who { color:#e3b341; font-size:22px; }
+</style></head><body>
+  <div class="row">
+    <div class="box codex">
+      <div class="who">pi scout</div>
+      <div class="does">maps the topic</div>
+    </div>
+    <div class="arrow">⟶</div>
+    <div class="box fable">
+      <div class="who">OPUS 4.8</div>
+      <div class="does">designs the lanes</div>
+    </div>
+    <div class="arrow">⟶</div>
+    <div class="box codex">
+      <div class="who">minimax-m3 ×3–6</div>
+      <div class="does">researches, in parallel</div>
+      <div class="lanes">
+        <div class="lane">lane 1</div>
+        <div class="lane">lane N</div>
+      </div>
+    </div>
+    <div class="arrow">⟶</div>
+    <div class="box fable">
+      <div class="who">OPUS 4.8</div>
+      <div class="does">verifies claims<br>writes the report</div>
+    </div>
+    <div class="arrow">⟶</div>
+    <div class="box out">
+      <div class="who">CITED REPORT</div>
+      <div class="does">feeds the build loop</div>
+    </div>
+  </div>
+</body></html>
