@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# pi-sandbox — confine a `pi` builder to one writable root using an OS policy
+# sandbox (macOS Seatbelt / Linux Landlock). Reads and network stay open; the
+# only writable paths are the root, the root-local TMPDIR, and pi's own state
+# dir (~/.pi). This solves two things at once for the minimax/pi builder:
+#
+#   1. No commits. A git worktree's objects/index live in the MAIN repo's .git,
+#      which is outside the writable root, so `git add`/`commit` fail with EPERM
+#      — the R7 no-commit rule is enforced by the runtime, not just post-flight.
+#      (For a main-checkout root, the root's own .git is carved out explicitly.)
+#   2. No worktree escape. `pi`'s bash tool can `cd` into the main checkout, but
+#      any WRITE there is denied — so parallel per-worktree lanes stay isolated
+#      even though pi doesn't honor the launched cwd.
+#
+# Usage:   pi-sandbox <writable-root> -- <command...>
+# Example: pi-sandbox "$PWD/.architect/wt/slice-01" -- \
+#            pi -p --provider openrouter --model minimax/minimax-m3 ... @block
+#
+# Exit 2 when no policy sandbox is available (Windows, or Linux without
+# landrun). The caller should then fall back to a single combined lane in the
+# main checkout plus the post-flight git-log check — see dispatch.md.
+
+set -euo pipefail
+
+ROOT="${1:?usage: pi-sandbox <writable-root> -- <command...>}"; shift
+if [ "${1:-}" = "--" ]; then shift; else
+  echo "pi-sandbox: expected -- before the command" >&2; exit 64
+fi
+[ "$#" -gt 0 ] || { echo "pi-sandbox: no command given" >&2; exit 64; }
+
+# Sandbox rules match the canonical real path (/tmp -> /private/tmp, $TMPDIR
+# lives under /private/var/folders, etc.), so resolve everything first.
+ROOT="$(cd "$ROOT" && pwd -P)"
+RTMP="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+PIHOME="${PI_CODING_AGENT_DIR:-$HOME/.pi}"
+mkdir -p "$PIHOME"
+
+# Run the command IN the root. `pi` has no working-dir flag and uses paths
+# relative to cwd, so it must start inside the worktree; the sandbox then denies
+# any write that strays outside it.
+cd "$ROOT"
+
+case "$(uname -s)" in
+  Darwin)
+    # Apple Seatbelt. Base allow-list adapted from openai/codex's proven
+    # seatbelt_base_policy.sbpl (a Node CLI that spawns shells). Children
+    # inherit the profile, so the bash tool pi spawns is confined too.
+    exec /usr/bin/sandbox-exec \
+      -D ROOT="$ROOT" -D ROOTGIT="$ROOT/.git" -D RTMP="$RTMP" -D PIHOME="$PIHOME" \
+      -p '(version 1)
+(deny default)
+(allow process-exec) (allow process-fork)
+(allow signal (target same-sandbox)) (allow process-info* (target same-sandbox))
+(allow sysctl-read) (allow mach-lookup) (allow iokit-open) (allow ipc-posix-sem)
+(allow pseudo-tty) (allow user-preference-read)
+(allow network*)
+(allow file-read*) (allow file-map-executable)
+(allow file-write-data (require-all (path "/dev/null") (vnode-type CHARACTER-DEVICE)))
+(allow file-write* (subpath (param "RTMP")))
+(allow file-write* (subpath (param "PIHOME")))
+(allow file-write*
+  (require-all
+    (subpath (param "ROOT"))
+    (require-not (literal (param "ROOTGIT")))
+    (require-not (subpath (param "ROOTGIT")))))' \
+      -- "$@"
+    ;;
+  Linux)
+    # Landlock LSM (kernel 5.13+), unprivileged, no namespaces/containers.
+    # Landlock has no deny rule, so the root's own .git can't be carved out:
+    # for a git worktree the real .git lives in the main repo (outside ROOT) so
+    # commits are already blocked; for a main-checkout root, rely on the
+    # post-flight git-log check. node's install prefix may need an extra --rox.
+    if command -v landrun >/dev/null 2>&1; then
+      exec landrun \
+        --ro / --rox /usr --rox /bin --rox /lib --rox /lib64 --rox /opt \
+        --rwx "$ROOT" --rwx "$RTMP" --rwx "$PIHOME" \
+        --unrestricted-network --best-effort --ldd -- "$@"
+    fi
+    echo "pi-sandbox: landrun not found (https://github.com/Zouuup/landrun);" \
+         "use combined-lane dispatch — see dispatch.md" >&2
+    exit 2
+    ;;
+  *)
+    echo "pi-sandbox: no policy sandbox on $(uname -s);" \
+         "use combined-lane dispatch — see dispatch.md" >&2
+    exit 2
+    ;;
+esac

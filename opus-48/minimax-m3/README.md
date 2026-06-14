@@ -14,10 +14,13 @@ pi install npm:pi-web-access             # web access for builders/researchers
 ```
 
 `./install.sh --project` installs to the current repo only instead of
-globally. You need [Claude Code](https://claude.com/claude-code) on any paid
-plan for the architect, and the [`pi`](https://pi.dev) CLI with an
-`OPENROUTER_API_KEY` for the builder (it runs `minimax/minimax-m3` on
-OpenRouter, billed per token).
+globally, and also installs the `pi-sandbox` builder-confinement helper. You
+need [Claude Code](https://claude.com/claude-code) on any paid plan for the
+architect, and the [`pi`](https://pi.dev) CLI with an `OPENROUTER_API_KEY` for
+the builder (it runs `minimax/minimax-m3` on OpenRouter, billed per token). The
+builder sandbox uses Apple Seatbelt on macOS (built in) and
+[Landlock](https://github.com/Zouuup/landrun) on Linux (`landrun`, kernel
+5.13+); without a policy sandbox the loop falls back to a single combined lane.
 
 ## Use (two commands)
 
@@ -40,12 +43,17 @@ One short architect session per work block — judgment only, it never writes co
   1–4 lanes whose file sets are checked for overlap, and commits the acceptance
   gates to `docs/gates/` *before* any builder starts. Gates are read-only; a
   builder edit to a gate file fails the slice automatically.
-- **Parallel isolated builders.** One fresh `pi -p` (xhigh thinking) per lane,
-  each in its own git worktree. Builders must argue with the spec before
-  building (silent compliance = defect), build only their declared files,
-  and report raw results — they never commit, and the architect verifies that
-  post-flight (`pi` has no sandbox, so the no-commit rule is enforced by a
-  `git log` check, not the runtime).
+- **Parallel sandbox-isolated builders.** One fresh `pi -p` (xhigh thinking)
+  per lane, each in its own git worktree, launched in the background (staggered,
+  since minimax-m3 drops concurrent OpenRouter requests). `pi` has no built-in
+  sandbox and its bash tool won't hold a worktree cwd, so each launch is wrapped
+  in `pi-sandbox` (Apple Seatbelt / Linux Landlock) confining writes to that
+  worktree — a stray `cd` into the main checkout can read but not write, and
+  `git` commits fail with `EPERM`, so isolation and the no-commit rule are
+  runtime-enforced (the post-flight `git log` check is now just defense-in-depth).
+  Builders must argue with the spec before building (silent compliance = defect),
+  build only their declared files, and report raw results. (No policy sandbox —
+  Windows / old kernel — falls back to one combined lane in the main checkout.)
 - **The architect judges and integrates.** It runs the gate commands itself
   (builder claims are hearsay), reads the diff against the spec's intent (passing
   tests ≠ mergeable work), then commits and merges passing lanes. Judgment
@@ -90,8 +98,10 @@ Each design choice is source-backed (full citations in
 - Weak planners hurt more than weak executors — so the architect model does
   the design, and builders get explicit specs.
 - Manager + worktree-isolated workers is a well-supported topology for
-  shared-artifact software work; naive shared-file coordination collapses
-  throughput.
+  shared-artifact software work. `pi` lacks the sandbox that normally enforces
+  that isolation, so this variant wraps each builder in an OS policy sandbox
+  (Seatbelt/Landlock) that confines writes to its worktree and blocks commits —
+  restoring the guarantee at the runtime layer (see DESIGN.md R8).
 - Frozen external gates beat trusting the agent — but agents game visible
   tests and their passing PRs are frequently unmergeable, so the architect
   also reads the diff.
@@ -107,7 +117,8 @@ Each design choice is source-backed (full citations in
 |---|---|
 | [DESIGN.md](DESIGN.md) | The design document — 12 enforced rules, failure-mode table, cited sources |
 | [skills/architect/SKILL.md](skills/architect/SKILL.md) | The architect role: hard rules + procedure |
-| [skills/architect/dispatch.md](skills/architect/dispatch.md) | Verified `pi` commands, builder block, worktree fan-out, stall triage |
+| [skills/architect/dispatch.md](skills/architect/dispatch.md) | Verified `pi` commands, builder block, sandboxed worktree fan-out, truncation rescue, stall triage |
+| [skills/architect/sandbox/pi-sandbox](skills/architect/sandbox/pi-sandbox) | Builder confinement: Seatbelt (macOS) / Landlock (Linux) write-jail around `pi` |
 | [skills/architect/research.md](skills/architect/research.md) | Slice-scale inline fact-check fan-out |
 | [skills/architect/HANDOFF.template.md](skills/architect/HANDOFF.template.md) | The repo-memory file |
 | [skills/architect-research/SKILL.md](skills/architect-research/SKILL.md) | Research orchestration: scout → design → fan out → verify → write |
@@ -125,10 +136,13 @@ charges against `minimax/minimax-m3` — a cheap, capable model doing the
 typing-hours. There are no per-window quotas to exhaust mid-run, just a funded
 balance. The architect's Opus 4.8 sessions are minutes, not hours.
 
-**What if a builder wrecks things?** Nothing reaches a branch until the
-architect's tamper, boundary, and gate checks pass — including a `git log` check
-that the lane made no commits (since `pi` has no sandbox). Worktrees are
-discarded and re-dispatched from the freeze commit.
+**What if a builder wrecks things?** It can't reach far: each builder runs
+inside an OS policy sandbox (`pi-sandbox`) that confines writes to its own
+worktree, so a write to the main checkout or a `git commit` fails with `EPERM`.
+On top of that, nothing reaches a branch until the architect's tamper, boundary,
+and gate checks pass — including a `git log` check that the worktree made no
+commits. On any violation the worktree is discarded and re-dispatched from the
+freeze commit.
 
 **Can I watch a run?** Yes — every dispatch prints the builder block, so you
 can paste it into an interactive `pi` session instead.

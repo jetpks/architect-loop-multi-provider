@@ -67,9 +67,12 @@ dispatch. State the plan in a few lines; proceed unless the user redirects.
 
 ### 3. Fan out
 
-One fresh researcher per lane, all parallel, in the background. Read-only by
-toolset (`read,grep,find,ls`) plus the web tools (`web_search,fetch_content`);
-the report is the redirected stdout:
+One fresh researcher per lane, in the background, but **stagger the launches** —
+minimax-m3 over OpenRouter silently drops concurrent requests (firing 5 at once
+left only 1 with output, the rest exited 0 bytes with empty stderr). Sleep a few
+seconds between launches and re-dispatch any lane whose output file lands at 0
+bytes. Read-only by toolset (`read,grep,find,ls`) plus the web tools
+(`web_search,fetch_content`); the report is the redirected stdout:
 
 ```bash
 pi -p --provider openrouter --model minimax/minimax-m3 --thinking high \

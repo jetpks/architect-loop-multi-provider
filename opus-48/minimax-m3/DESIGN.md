@@ -43,7 +43,8 @@ This loop adds one more separation on top: **cross-vendor judgment**. The builde
 and the judge are different models from different labs (minimax-m3 builds, Opus
 4.8 judges), which reduces same-model review bias. The split also plays to type:
 the judgment model orchestrates in Claude Code with persistent file-based memory,
-while a cheap, capable execution model does the typing-hours in parallel lanes.
+while a cheap, capable execution model does the typing-hours in fresh,
+sandbox-isolated worktree lanes.
 
 The economics are another reason for the split: judgment minutes on the
 strong-reasoning model, typing hours on the cheaper one. An orchestrator/worker
@@ -155,22 +156,34 @@ follow-ups within the same slice (answering the builder's PHASE 0 questions),
 never to stretch one builder context across slices. "Code is cheap": when a long
 run leaves the repo broken, `git reset` and re-dispatch beats rescue prompting.
 
-### R8. Parallelism is architect-orchestrated: one worktree + one fresh `pi -p` per lane, capped at 4
+### R8. Parallelism is architect-orchestrated: one sandbox-confined worktree + one fresh `pi -p` per lane, capped at 4
 Merge conflicts between parallel agents are the top reported multi-agent failure;
 the converged mitigation is mapping file-touch sets before parallelizing, one
 git worktree per agent, and a practical ceiling of 2–4 lanes before coordination
 overhead dominates ([Intility engineering](https://engineering.intility.com/article/agent-teams-or-how-i-learned-to-stop-worrying-about-merge-conflicts-and-love-git-worktrees),
 [MindStudio worktrees](https://www.mindstudio.ai/blog/git-worktrees-parallel-ai-coding-agents)).
 **The architect — not the builder — owns the fan-out.** The spec splits the
-slice into 1–4 lanes whose file sets are checked for overlap; each lane is an
-isolated worktree running its own `pi -p` process, writing its own lane report
-(`docs/lanes/`); the architect runs per-lane boundary checks (`git status`
-must show only declared files; `git log <freeze>..` must be empty since `pi` has
-no sandbox to block commits), commits each passing lane, and merges sequentially
-with gate smoke-runs after every merge. Keeping fan-out in the architect rather
-than delegating it to a builder-internal subagent feature makes a merge conflict
-a detectable spec defect instead of a silent hazard, and isolates per-lane
-failure (discard one lane, not the slice).
+slice into 1–4 lanes whose file sets are checked for overlap; each lane is a
+worktree running its own `pi -p`, writing its own lane report (`docs/lanes/`).
+
+The wrinkle unique to `pi`: it has no sandbox and its `bash` tool does not stay
+in the launched worktree cwd — minimax-m3 keys off the absolute main-checkout
+paths in the spec and `cd`s back into the main checkout, so a naive 2-lane run
+had both builders' edits land in the main tree, isolation defeated. The fix is to
+wrap every `pi` launch in an **OS policy sandbox** (`pi-sandbox`: Apple Seatbelt
+on macOS, Landlock on Linux) that confines writes to the lane's worktree. A
+worktree's git objects and index live in the *main* repo's `.git`, outside the
+writable root, so `git add`/`commit` fail with `EPERM` and a stray `cd` into the
+main checkout can read but not write — restoring exactly the isolation +
+no-commit guarantee Codex gets from `--sandbox workspace-write` (verified: writes
+outside the worktree and all git writes return `EPERM`, reads and network stay
+open). The architect then runs per-lane boundary checks (`git status` only
+declared files; `git log <freeze>..` empty), commits each passing lane, and
+merges sequentially with gate smoke-runs. Where no policy sandbox exists
+(Windows, or Linux without `landrun`), fall back to one combined lane in the main
+checkout built by a single `pi -p` — disjoint by construction, so no cwd to
+escape — and lean on the post-flight checks. minimax-m3 also drops concurrent
+OpenRouter requests, so parallel launches are staggered.
 
 ### R9. Supervise asynchronously; never block on the builder
 Anthropic's agent guidance for orchestrators is explicit: "prefer async
@@ -222,10 +235,12 @@ Facts the skill encodes:
   but automations pin them per invocation so a session default can't silently
   swap the model.
 - **`pi -p` (`--print`) is the headless, non-interactive mode** (the `codex exec`
-  analog) — it processes the prompt and exits. There is **no sandbox**:
-  permissions are the **tool allowlist** (`-t read,bash,edit,write,grep,find`
-  for builders; drop `bash`/`edit`/`write` for read-only researchers). This is
-  the one load-bearing difference from the Codex design — see R8 and below.
+  analog) — it processes the prompt and exits. It has **no built-in sandbox**:
+  in-process permissions are the **tool allowlist** (`-t read,bash,edit,write,grep,find`
+  for builders; drop `bash`/`edit`/`write` for read-only researchers). The
+  filesystem confinement Codex gets from its runtime is instead supplied by
+  wrapping the launch in `pi-sandbox` (R8) — the one load-bearing difference from
+  the Codex design.
 - **Thinking** maps to `--thinking off|minimal|low|medium|high|xhigh`,
   per invocation (`xhigh` default for builders, `high` for research).
 - **Prompt input** is `@file` — the block is written to a file and injected
@@ -244,20 +259,25 @@ Facts the skill encodes:
 - **`AGENTS.md`/`CLAUDE.md`** are the builder's standing context — `pi` loads
   both root-down. The loop's PHASE rules live in the dispatch block so they
   version with the skill; repo-specific build/test commands belong in `AGENTS.md`.
-- **No commit guarantee from the runtime.** Codex's `--sandbox workspace-write`
-  made `.git` physically read-only, so "builders never commit" was enforced by
-  the runtime. `pi` has no sandbox, so the rule is enforced after the run by the
-  architect: `git -C <worktree> log <freeze>..` must be empty and `git status`
-  must show only declared files. A commit = a tampered worktree → reset and
-  re-dispatch.
+- **Commit + working-dir guarantees come from a wrapper sandbox, not `pi`.**
+  Codex's `--sandbox workspace-write` made `.git` read-only and pinned the cwd, so
+  "builders never commit" and worktree isolation were runtime-enforced. `pi` has
+  neither: its bash tool can `cd` anywhere and write to `.git`. So every launch is
+  wrapped in `pi-sandbox` (Seatbelt/Landlock — §R8) confining writes to the lane's
+  worktree; a worktree's git objects/index live in the main repo's `.git` (outside
+  the writable root), so commits fail with `EPERM` and a `cd`-escape can read but
+  not write. The post-flight checks (`git log <freeze>..` empty, `git status`
+  only declared files) stay as defense-in-depth and as the *only* line where no
+  sandbox is available (Windows / no `landrun` → combined-lane fallback).
 
-Canonical dispatch:
+Canonical dispatch (wrapped):
 
 ```bash
-pi -p --provider openrouter --model minimax/minimax-m3 --thinking xhigh \
-  --session-id <slice> \
-  -t read,bash,edit,write,grep,find,web_search,fetch_content \
-  --mode json @.architect/dispatch-block.md \
+"$PI_SANDBOX" "$WT" -- \
+  pi -p --provider openrouter --model minimax/minimax-m3 --thinking xhigh \
+    --session-id <slice> \
+    -t read,bash,edit,write,grep,find,web_search,fetch_content \
+    --mode json @.architect/dispatch-block.md \
   > .architect/last-run.jsonl
 ```
 
@@ -280,13 +300,13 @@ balance. The architect runs on the Claude plan in Claude Code.
 │   3. Spec next slice: objective + output format + tool guidance +          │
 │      boundaries + out-of-scope; freeze gates to docs/gates/<slice>.md;     │
 │      commit the freeze                                                     │
-│   4. Dispatch: 1-4 parallel pi -p lanes, one git worktree each             │
-│      (background, fresh context, xhigh default). Per lane: PHASE 0         │
-│      disagree-or-fail → PHASE 1 contracts frozen → PHASE 2 build own       │
-│      files only → raw lane report (docs/lanes/), no commits                │
-│   5. Post-flight per lane: raw-only? disagreements raised? gates           │
-│      untouched? in-bounds? → architect commits + merges lanes with         │
-│      gate smoke-runs; verdict waits for next block                         │
+│   4. Dispatch: 1-4 sandbox-confined pi -p lanes, one git worktree each      │
+│      (background+staggered, fresh context, xhigh default). Per lane:        │
+│      PHASE 0 disagree-or-fail → PHASE 1 contracts frozen → PHASE 2 build    │
+│      own files only → raw lane report (docs/lanes/), no commits             │
+│   5. Post-flight per lane: raw-only? disagreements raised? gates            │
+│      untouched? in-bounds? no commits? → architect commits + merges lanes   │
+│      with gate smoke-runs; verdict waits for next block                     │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
          repo carries everything across the gap between blocks
@@ -421,9 +441,14 @@ became a tactics library the orchestrator draws from when designing lanes:
 | Goalpost moving | Verbatim gate quoting; gates never edited after results; missing gate = spec defect, frozen for next slice only (R2, R4) |
 | Scope creep | Explicit out-of-scope list per slice; silent scope additions = builder failure; architect flags creep by name (R5, R6) |
 | Context rot | Architect context holds judgment only; fresh builder process per slice; repo is the memory (R1, R7) |
-| Merge conflicts between lanes | Disjoint-file-set lanes, ≤3–4, worktrees, one reviewer lane gating merges (R8) |
+| Merge conflicts between lanes | Disjoint-file-set lanes, ≤3–4, one sandbox-confined worktree each, sequential merge with gate smoke-runs; a conflict = a spec defect (R8) |
+| `pi` builder escapes worktree cwd | `pi-sandbox` confines writes to the lane's worktree — a `cd` into the main checkout can read but not write (`EPERM`); post-flight `git status` boundary check as backup (R8, dispatch.md) |
+| Builder commits despite the no-commit rule | Sandbox denies writes to the main repo's `.git` (worktree objects/index live there) → `git add`/`commit` fail with `EPERM`; post-flight `git log <freeze>..` must be empty (R7, R8) |
+| No policy sandbox (Windows / old kernel) | `pi-sandbox` exits 2 → fall back to one combined lane in the main checkout (disjoint by construction, no cwd to escape) + post-flight checks (dispatch.md) |
+| `pi` step-cap truncates a build run | Clean exit but no `STATUS:`/lane report → resume the same `--session-id` with a continuation block, don't reset; re-spec smaller if it recurs (dispatch.md) |
+| Concurrent OpenRouter requests dropped | minimax-m3 silently drops simultaneous calls; stagger parallel launches (`sleep` between) + re-dispatch 0-byte exits, both build lanes and research fan-out (dispatch.md, research.md) |
 | Placeholder implementations | Gate commands are end-to-end and executable; "search before implementing; no placeholder code" in the builder block (R4) |
-| Broken repo after a long run | One slice per iteration; commit per lane; `git reset` + re-dispatch over rescue prompting (R7) |
+| Broken repo after a long run | One slice per iteration; architect commits after post-flight; `git reset` + re-dispatch over rescue prompting (R7) |
 | Fabricated status reports | Every status claim audited against a tool result, both sides (R10) |
 | Gate-passing but unmergeable work | Judge reads the diff against spec intent, not gate output alone — METR: 38% test-pass, 0 mergeable as-is; cross-model review for high-stakes (R3, R4) |
 | Builder gaming visible gates | Gates frozen + read-only; architect-run verification; no builder iterate-against-gate feedback loops (ImpossibleBench: visible-test loops raised cheating 33%→38%) (R2, R3) |

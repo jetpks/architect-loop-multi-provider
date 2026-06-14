@@ -5,8 +5,9 @@ description: >
   only: arbitration, judging raw evidence against frozen gates, splitting slices
   into disjoint lanes, kill/continue calls. The BUILDERS are 1-4 parallel
   minimax-m3 agents run via the `pi` CLI (xhigh thinking), each in its own git
-  worktree; the architect reviews, merges, and integrates their work. The repo
-  is the memory (docs/HANDOFF.md + docs/gates/ + docs/lanes/). Use when asked to
+  worktree confined by an OS policy sandbox (`pi-sandbox`); the architect
+  reviews, merges, and integrates their work. The repo is the memory
+  (docs/HANDOFF.md + docs/gates/ + docs/lanes/). Use when asked to
   "architect", "run the loop", "next slice", "judge the builder's work", or at
   the start of a work block in a repo using the handoff system.
 ---
@@ -39,12 +40,17 @@ commands and the builder block template: `dispatch.md` next to this file.
    goalpost-moving bluntly too.
 6. **Audit every status claim** — yours and the builder's — against a tool
    result from the session before reporting it.
-7. **Fresh builder context per lane, worktree isolation between lanes.**
-   `pi --session-id <lane>` follow-ups only within the current lane. Builders
-   never commit — `pi` has no sandbox to enforce that, so verify it yourself
-   post-flight (`git -C <worktree> log <freeze>..` must be empty). If a run
-   leaves a worktree broken or committed, discard that lane + re-dispatch over
-   rescue prompting — lanes are cheap by construction.
+7. **Fresh builder context per lane; sandbox-enforced worktree isolation.**
+   `pi --session-id <lane>` follow-ups only within the current lane. `pi` has no
+   built-in sandbox and its bash tool won't hold a worktree cwd, so every `pi`
+   launch is wrapped in `pi-sandbox` (Seatbelt/Landlock — dispatch.md), confining
+   it to its worktree: a stray `cd` into the main checkout can read but not
+   write, and `git` commits fail with `EPERM`. So isolation and the no-commit
+   rule are runtime-enforced; the post-flight `git log <freeze>..` check stays as
+   defense-in-depth. If a run leaves a worktree broken or committed, discard that
+   lane + re-dispatch over rescue prompting — lanes are cheap by construction.
+   (No sandbox available → fall back to one combined lane in the main checkout;
+   dispatch.md.)
 8. **Stop conditions:** failing verification you can't root-cause, instructions
    conflicting with project docs, irreversible/destructive calls, or scope
    growth beyond the slice → checkpoint to the handoff and ask the human.
@@ -132,50 +138,52 @@ One-PR-sized. The spec is the full delegation contract, self-contained:
   no refactors beyond the task.
 - **Lane plan** — split the slice into 1–4 parallel lanes with **file-touch
   sets checked for overlap**: list every file each lane may touch; any overlap
-  means those lanes run as one. Each lane gets its own objective, output
-  format, and boundaries. Most slices are one lane — fan out only when the
-  work is genuinely parallel.
+  means those lanes run as one. Each lane gets its own objective, output format,
+  and boundaries, and is built in its own sandbox-confined worktree. Most slices
+  are one lane — fan out only when the work is genuinely parallel.
 - **Gates** — exact commands + thresholds, written to `docs/gates/<slice>.md`,
   committed now. This freeze commit is the last thing before dispatch.
 - **Effort call** — `--thinking` default `xhigh`; downgrade a lane to `high`
   when it is routine and tightly specified (record which and why in the spec).
 
-### 5. Dispatch (one fresh `pi -p` per lane, worktree-isolated)
+### 5. Dispatch (one fresh sandboxed `pi -p` per lane, worktree-isolated)
 
 Per the mechanics in `dispatch.md`:
 
-- **1 lane** → dispatch in the main checkout.
-- **2–4 lanes** → `git worktree add` per lane off the freeze commit, write
-  each lane's builder block to a file, then launch one `pi -p` per worktree —
-  **all in parallel, all in the background**. Each lane builds only its declared
-  files and writes raw results to its own lane report
-  (`docs/lanes/<slice>-<lane>.md`), so lanes never collide.
+- **1 lane** → dispatch in the main checkout, still wrapped in `pi-sandbox`.
+- **2–4 lanes** → `git worktree add` per lane off the freeze commit, write each
+  lane's builder block to a file, then launch one `pi -p` per worktree via
+  `pi-sandbox` (confining each to its worktree) — **all in the background, but
+  staggered** (minimax-m3 silently drops concurrent OpenRouter requests). Each
+  lane builds only its declared files and writes raw results to its own lane
+  report (`docs/lanes/<slice>-<lane>.md`), so lanes never collide.
 
 Do not block — end the turn or do other judgment work; multi-hour runs are
 normal. Print the blocks too, so the human can run any lane in an interactive
-`pi` session instead. Whenever you return to a running lane, check liveness:
-the lane's `--mode json` run-log must still be growing. If it has been silent
-15+ minutes on one in-flight command, follow "Stall detection and rescue" in
-`dispatch.md` — kill the stuck child process, not the run.
+`pi` session instead. Whenever you return to a running lane, check liveness: the
+lane's `--mode json` run-log must still be growing. If it has been silent 15+
+minutes on one in-flight command, follow "Stall detection and rescue" in
+`dispatch.md` — kill the stuck child process, not the run. If a run exits cleanly
+but with no `STATUS:` line or lane report, it hit `pi`'s step cap — resume the
+same session ("Truncated runs" in `dispatch.md`), don't reset.
 
 ### 6. Post-flight and integrate (when the runs complete)
 
-**Per lane**, with evidence: (a) the lane report / handoff has raw results
-only, (b) PHASE 0 disagreements were raised (silent compliance = defect to
-log), (c) `git diff` on `docs/gates/` is clean in that worktree, (d)
-`git status` in the worktree shows **only files inside the lane's declared
-set** — an out-of-bounds write fails the lane, (e) `git -C <worktree> log
-<freeze>..` is empty — a builder commit means a tampered worktree (reset and
+**Per lane**, with evidence (the sandbox enforces these at runtime; check them
+anyway as defense-in-depth): (a) the lane report / handoff has raw results only,
+(b) PHASE 0 disagreements were raised (silent compliance = defect to log), (c)
+`git diff` on `docs/gates/` is clean in that worktree, (d) `git status` in the
+worktree shows **only files inside the lane's declared set** — an out-of-bounds
+write fails the lane, (e) `git -C <worktree> log <freeze>..` is empty — a commit
+means the sandbox was bypassed or absent; treat as tampered (reset and
 re-dispatch).
 
-**Then integrate** (you do this — `pi` has no sandbox, so confirm the lane made
-no commits with `git -C <worktree> log <freeze>..` before trusting it): commit
-each passing lane on its lane branch, merge lanes
-sequentially into the integration branch `slice/<name>`, running the gate
-commands after each merge as an integration smoke check. A merge conflict
-means the lane plan wasn't disjoint — that's a spec defect: kill the
-conflicting lane and re-spec it. Consolidate lane reports into
-`docs/HANDOFF.md`, remove the worktrees, commit.
+**Then integrate** (you do this — the builder couldn't, and you verified it):
+commit each passing lane on its lane branch, merge lanes sequentially into the
+integration branch `slice/<name>`, running the gate commands after each merge as
+an integration smoke check. A merge conflict means the lane plan wasn't disjoint
+— that's a spec defect: kill the conflicting lane and re-spec it. Consolidate
+lane reports into `docs/HANDOFF.md`, remove the worktrees, commit.
 
 **Do not judge now** — the gate verdict on the integration branch belongs to
 the next architect session; merge to main only on a PASS/CONTINUE verdict

@@ -12,10 +12,15 @@ Cover different angles, not the same angle five times — typical split:
 official docs/reference, changelog/breaking changes, community failure reports,
 alternatives/comparisons, security/operational constraints.
 
-One fresh `pi -p` per question, all launched in parallel, in the background.
-The researcher toolset is read-only (`read,grep,find,ls`) plus the web tools
+One fresh `pi -p` per question, launched in the background. The researcher
+toolset is read-only (`read,grep,find,ls`) plus the web tools
 (`web_search,fetch_content`) — no `edit`/`write`/`bash`, so it cannot touch the
-repo. Capture the final report by redirecting stdout (the `-o` analog):
+repo (and there is no worktree-cwd problem to worry about, unlike build lanes).
+**Stagger the launches** — minimax-m3 over OpenRouter silently drops concurrent
+requests: firing 5 at once left only 1 with output and the rest exited 0 bytes
+with empty stderr. Sleep a few seconds between launches, and re-dispatch any lane
+whose output file lands at 0 bytes. Capture the final report by redirecting
+stdout (the `-o` analog):
 
 ```bash
 pi -p --provider openrouter --model minimax/minimax-m3 --thinking high \

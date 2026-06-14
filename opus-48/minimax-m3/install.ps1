@@ -26,3 +26,5 @@ if ($pi) {
 } else {
     Write-Host "pi CLI not found - install the builder from https://pi.dev"
 }
+
+Write-Host "Sandbox: no policy sandbox on Windows - builders use combined-lane dispatch (see dispatch.md)"
