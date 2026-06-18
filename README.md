@@ -19,9 +19,10 @@ that directory.
 | [`fable-gpt-55`](fable-gpt-55) | Claude Fable | GPT-5.5 Codex | `codex exec` (xhigh) | ChatGPT plan 5-hour / weekly quotas |
 | [`opus-48-sonnet-46`](opus-48-sonnet-46) | Opus 4.8 | Sonnet 4.6 | headless `claude -p` | Agent SDK credit pool (same Claude plan) |
 | [`opus-48-sonnet-46-kawaii`](opus-48-sonnet-46-kawaii) | Opus 4.8 | Sonnet 4.6 | headless `claude -p` | Agent SDK credit pool (same Claude plan) |
+| [`opus-48-sonnet-46-kawaii-space`](opus-48-sonnet-46-kawaii-space) | Opus 4.8 | Sonnet 4.6 | headless `claude -p` | Agent SDK credit pool (same Claude plan) |
 
-Each directory is named `<architect>-<builder>`. More provider variants land as
-they're validated.
+Each directory is named `<architect>-<builder>` (with optional style/workspace
+suffixes). More provider variants land as they're validated.
 
 ### Which one?
 
@@ -34,6 +35,12 @@ they're validated.
   same loop as `opus-48-sonnet-46` (same models, same CLI, same cost); its docs
   and skills just wear the kawaii house style. Pick it if you like your harness
   bubbly. (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧
+- **[`opus-48-sonnet-46-kawaii-space`](opus-48-sonnet-46-kawaii-space)** — the
+  kawaii loop made **space-centric**: it runs inside a
+  [space-cadet](https://github.com/jetpks/space-cadet) space, so the space (its
+  own git repo) is the memory and a mission can span several repos under
+  `repos/`. Pick it if you drive work from spaces and want the loop's artifacts
+  out of the code repos. 🪐
 
 ## Install
 
