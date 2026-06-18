@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1500px; height:560px; background:#0d1117; font-family:"Cascadia Code",Consolas,monospace; color:#e6edf3; padding:44px 56px; }
+  .row { display:flex; align-items:center; justify-content:center; gap:18px; margin-top:10px; }
+  .box { border-radius:16px; padding:30px 34px; text-align:center; }
+  .fable { background:#1c1410; border:3px solid #d97757; width:360px; }
+  .codex { background:#0e1a16; border:3px solid #10a37f; width:360px; }
+  .who { font-size:30px; font-weight:700; }
+  .fable .who { color:#d97757; } .codex .who { color:#3fd0a4; }
+  .does { font-size:21px; color:#c9d1d9; margin-top:10px; line-height:1.45; }
+  .arrow { font-size:44px; color:#6e7681; }
+  .lanes { display:flex; flex-direction:column; gap:7px; margin-top:12px; }
+  .lane { border:1.5px solid #1f6f58; border-radius:8px; padding:4px 10px; font-size:16px; color:#7ee2c3; background:#0a221b; }
+  .repo { margin:40px auto 0; width:1020px; background:#1a1607; border:3px solid #e3b341; border-radius:16px; padding:18px; text-align:center; }
+  .repo .who { color:#e3b341; font-size:24px; }
+  .repo .does { font-size:19px; }
+  .updown { text-align:center; color:#6e7681; font-size:28px; margin-top:14px; letter-spacing:30px; }
+</style></head><body>
+  <div class="row">
+    <div class="box fable">
+      <div class="who">OPUS 4.8</div>
+      <div class="does">designs the slice<br>freezes the gates</div>
+    </div>
+    <div class="arrow">⟶</div>
+    <div class="box codex">
+      <div class="who">SONNET 4.6 ×1–4</div>
+      <div class="does">builds, in parallel</div>
+      <div class="lanes">
+        <div class="lane">worktree 1</div>
+        <div class="lane">worktree 2</div>
+        <div class="lane">worktree N</div>
+      </div>
+    </div>
+    <div class="arrow">⟶</div>
+    <div class="box fable">
+      <div class="who">OPUS 4.8</div>
+      <div class="does">runs the gates<br>judges · merges</div>
+    </div>
+  </div>
+  <div class="updown">⇣⇡</div>
+  <div class="repo">
+    <div class="who">THE REPO REMEMBERS</div>
+    <div class="does">HANDOFF.md · gates/ · lanes/ · git — not in the repo = didn't happen</div>
+  </div>
+</body></html>
