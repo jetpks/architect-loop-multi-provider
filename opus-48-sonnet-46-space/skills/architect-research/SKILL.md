@@ -159,6 +159,6 @@ Commit the report. Raw findings stay in `tmp/architect/research/` (gitignored).
 
 ### 7. Hand off
 
-If this feeds the build loop: distill the report into `artifacts/prd/<slice>.md`
-per `/architect` and continue there. The builder's PHASE 0 will challenge the
-PRD's claims — that's a feature.
+If this feeds the build loop: distill the report into the slice's **Grounds**
+section (`artifacts/<NN>-<slice>.md`) per `/architect` and continue there. The
+builder's PHASE 0 will challenge Grounds' claims — that's a feature.

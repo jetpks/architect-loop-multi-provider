@@ -3,8 +3,8 @@
 Verified against the `claude` CLI (Claude Code) headless mode, June 2026. The
 builder is `claude -p` (`--print`, the non-interactive headless mode) pinned to
 `claude-sonnet-4-6` — the *same binary the architect runs, one tier down*. Key
-facts the skill encodes: prompt blocks go in on **stdin** (Claude Code has no
-`@file`, and a big quoted block as a shell argument gets mangled); the model is
+facts the skill encodes: lane-prompts go in on **stdin** (Claude Code has no
+`@file`, and a big quoted lane-prompt as a shell argument gets mangled); the model is
 pinned with `--model claude-sonnet-4-6` (the `sonnet` alias floats to the latest
 Sonnet — pin the full id); there is **no `-C`/working-dir flag**, so per-lane
 dispatch `cd`s into the worktree; permissions are the **tool allow/deny lists**
@@ -18,7 +18,7 @@ settings, off by default), so `.git` is not hardware-protected. "Builders never
 commit" (R7) is now enforced in three layers, weakest to strongest: (1) a runtime
 first line — deny the git-write tools with `--disallowedTools 'Bash(git
 commit:*)' …`; (2) worktree isolation between lanes; (3) the authoritative check
-— an architect post-flight `git -C <worktree> log <freeze-sha>..` that must be
+— an architect post-flight `git -C <worktree> log <repo-base>..` that must be
 empty. The deny rules are not airtight (a builder can shell out — `sh -c 'git
 commit …'` — past the pattern match), so the post-flight `git log` is what the
 loop actually trusts. If a lane committed, treat the worktree as tampered: reset
@@ -34,13 +34,17 @@ canary lane and confirm it starts cleanly before fanning anything out.
 
 ## Canonical headless dispatch (architect-driven)
 
-Write the builder block to a file first, then feed it on **stdin** — never as a
-shell argument. Big prompt blocks contain quotes that shells (especially Windows
+Write the lane-prompt to a file first, then feed it on **stdin** — never as a
+shell argument. Big lane-prompts contain quotes that shells (especially Windows
 PowerShell) mangle; a stdin redirect injects the file verbatim and sidesteps it.
 `claude -p` with no prompt argument reads the prompt from stdin.
 `--output-format stream-json --verbose` streams JSONL events to stdout; redirect
 it to a run-log for liveness/stall checks. The lane's actual deliverable is the
-report the builder writes with its `Write` tool to `artifacts/lanes/<slice>-<lane>.md`.
+raw report the builder writes with its `Write` tool to its **scratch** file
+`tmp/architect/<slice>-<lane>.report.md` — the builder never touches `artifacts/`;
+the architect transcribes that scratch report verbatim into the slice file's
+Builder Report section during post-flight. (`<slice>` is the full slice id
+`<NN>-<name>`, e.g. `02-integration`; the trailing `<NN>` is the lane number.)
 
 Single-lane slice (dispatch in the main checkout). Run this too as a **background
 Bash tool call** (`run_in_background`) so your turn doesn't block for the whole
@@ -53,8 +57,8 @@ claude -p --model claude-sonnet-4-6 \
   --disallowedTools 'Bash(git commit:*),Bash(git push:*),Bash(git reset:*),Bash(git merge:*),Bash(git rebase:*),Bash(git checkout:*),Bash(git branch:*)' \
   --output-format stream-json --verbose \
   --max-turns 200 \
-  < tmp/architect/<slice>-<NN>.block.md \
-  > tmp/architect/<slice>-<NN>.last-run.jsonl 2>&1
+  < tmp/architect/<slice>-<lane>.prompt.md \
+  > tmp/architect/<slice>-<lane>.last-run.jsonl 2>&1
 ```
 
 `acceptEdits` auto-approves file writes; listing `Bash` in `--allowedTools`
@@ -69,27 +73,27 @@ against commits.
 One isolated worktree + one fresh `claude -p` per lane, each launched as its own
 **background Bash tool call** (your harness's `run_in_background`). Lanes have
 file-touch sets checked for overlap from the spec; each writes raw results to its
-own `artifacts/lanes/<slice>-<lane>.md`, so nothing collides. Claude Code has no `-C`,
-so each lane runs inside a subshell `cd`'d into its worktree, with absolute paths
-for the block and the run-log.
+own scratch `tmp/architect/<slice>-<lane>.report.md`, so nothing collides. Claude
+Code has no `-C`, so each lane runs inside a subshell `cd`'d into its worktree,
+with absolute paths for the lane-prompt and the run-log.
 
 ```bash
-# per lane, off the freeze commit — use space architect worktree to create the
-# worktree under tmp/architect/wt/<slice>-<NN> and record it in .space.yml:
-space architect worktree add REPO <slice> <NN> --base <freeze-sha>
-# (equivalent manual: git -C repos/<repo> worktree add <space>/tmp/architect/wt/<slice>-<NN> -b lane/<slice>-<NN> <freeze-sha>)
+# per lane, off the TARGET REPO's base commit (a repo commit — distinct from the
+# Rubric freeze, which is a space-repo commit). Records the lane in .space.yml:
+space architect worktree add <repo> <slice> <lane> --base <repo-base>
+# (equivalent manual: git -C repos/<repo> worktree add <space>/tmp/architect/wt/<slice>-<lane> -b lane/<slice>-<lane> <repo-base>)
 
-# write the lane's builder block to tmp/architect/<slice>-<NN>.block.md, then dispatch it.
+# write the lane's lane-prompt to tmp/architect/<slice>-<lane>.prompt.md, then dispatch it.
 # Issue this as its OWN Bash tool call with run_in_background — one call per lane.
 # The command is a single BLOCKING claude -p (no trailing `&`, no `for` loop).
-( cd <space>/tmp/architect/wt/<slice>-<NN> && \
+( cd <space>/tmp/architect/wt/<slice>-<lane> && \
   claude -p --model claude-sonnet-4-6 \
     --permission-mode acceptEdits \
     --allowedTools 'Read,Edit,Write,Grep,Glob,Bash,WebSearch,WebFetch' \
     --disallowedTools 'Bash(git commit:*),Bash(git push:*),Bash(git reset:*),Bash(git merge:*),Bash(git rebase:*),Bash(git checkout:*),Bash(git branch:*)' \
     --output-format stream-json --verbose --max-turns 200 \
-    < <space>/tmp/architect/<slice>-<NN>.block.md \
-    > <space>/tmp/architect/<slice>-<NN>.last-run.jsonl 2>&1 )
+    < <space>/tmp/architect/<slice>-<lane>.prompt.md \
+    > <space>/tmp/architect/<slice>-<lane>.last-run.jsonl 2>&1 )
 ```
 
 **Background with the harness, never with shell `&`.** A `for NN … do (…) & done`
@@ -111,16 +115,16 @@ the runtime (see the load-bearing note at the top).
 ### Integration (architect-only, after per-lane post-flight passes)
 
 ```bash
-git -C repos/<repo> checkout -b slice/<name> <freeze-sha>
+git -C repos/<repo> checkout -b slice/<name> <repo-base>
 # per passing lane, sequentially:
-git -C <space>/tmp/architect/wt/<slice>-<NN> add -A
-git -C <space>/tmp/architect/wt/<slice>-<NN> commit -m "lane <NN>: <what>"
-git -C repos/<repo> merge --no-ff lane/<slice>-<NN>
+git -C <space>/tmp/architect/wt/<slice>-<lane> add -A
+git -C <space>/tmp/architect/wt/<slice>-<lane> commit -m "lane <lane>: <what>"
+git -C repos/<repo> merge --no-ff lane/<slice>-<lane>
 <run the gate commands>          # integration smoke after every merge
 # cleanup:
-space architect worktree remove <slice> <NN>
-# (equivalent manual: git -C repos/<repo> worktree remove <space>/tmp/architect/wt/<slice>-<NN>)
-git -C repos/<repo> branch -d lane/<slice>-<NN>
+space architect worktree remove <slice> <lane>
+# (equivalent manual: git -C repos/<repo> worktree remove <space>/tmp/architect/wt/<slice>-<lane>)
+git -C repos/<repo> branch -d lane/<slice>-<lane>
 ```
 
 A merge conflict = the lane plan wasn't disjoint = a spec defect. Kill the
@@ -128,7 +132,7 @@ conflicting lane and re-spec; don't hand-resolve builder conflicts.
 
 - Background each lane as its own harness task and let the **per-lane completion
   notification** bring you back (multi-hour runs are normal); read
-  `tmp/architect/<slice>-<NN>.last-run.jsonl` and the repo state afterwards. Do not write a
+  `tmp/architect/<slice>-<lane>.last-run.jsonl` and the repo state afterwards. Do not write a
   blocking `while pgrep …; sleep` wait loop as a Bash command — that is itself a
   launcher that ties up a turn. When you return to a lane, check liveness via
   run-log growth (the stall rules below still apply unchanged).
@@ -146,7 +150,7 @@ conflicting lane and re-spec; don't hand-resolve builder conflicts.
 - **Builders never commit, and the architect verifies it.** Claude Code has no
   sandbox to make `.git` read-only, so this is enforced by the deny rules at
   dispatch *and* checked after the run: before integrating a lane, confirm
-  `git -C <worktree> log <freeze-sha>..` is empty and `git -C <worktree> status`
+  `git -C <worktree> log <repo-base>..` is empty and `git -C <worktree> status`
   shows only files inside the lane's declared set. A commit or an out-of-bounds
   write fails the lane — reset and re-dispatch (lanes are cheap, hard rule 7).
 - Same-slice follow-up (e.g. answering PHASE 0 disagreements after the human
@@ -175,7 +179,7 @@ conflicting lane and re-spec; don't hand-resolve builder conflicts.
 ## Stall detection and rescue
 
 A dispatched run is STALLED when its `stream-json` run-log
-(`tmp/architect/<slice>-<NN>.last-run.jsonl`) has not grown for 15+ minutes AND the last event
+(`tmp/architect/<slice>-<lane>.last-run.jsonl`) has not grown for 15+ minutes AND the last event
 is an in-flight `Bash` tool call (a `tool_use` for `Bash` with no matching
 `tool_result` yet). Silent gaps between events are normal model thinking; a shell
 command that should take seconds sitting in flight for 15+ minutes is not.
@@ -192,7 +196,7 @@ worktree is broken; then discard the lane and re-dispatch (hard rule 7).
 Claude Code runs the `Bash` tool directly with no sandbox, so the Codex-era
 sandbox-specific hang sources don't apply — but long-running and interactive
 commands still hang an unattended run. Spec consequence: give every potentially
-long command an explicit timeout in the builder block (the `Bash` tool also takes
+long command an explicit timeout in the lane-prompt (the `Bash` tool also takes
 a per-call timeout), cap the run with `--max-turns` as a loop backstop, steer
 builders toward the repo's existing test fixtures over hand-rolled long-running
 harnesses, and when a gate needs a runtime that can't run unattended (interactive
@@ -202,12 +206,12 @@ anyway (hard rule 4). Write the gate file anticipating this.
 
 ## Manual alternative (human-driven)
 
-Paste the builder block into an interactive `claude` session (no `-p`). Claude
+Paste the lane-prompt into an interactive `claude` session (no `-p`). Claude
 Code's agent loop runs plan→act→test against the block's stopping condition while
 you watch and steer — approve tools as they come, or set `/permissions` first.
 Use when the human wants to babysit a run.
 
-## Builder block template
+## Lane-prompt template
 
 ```
 Execute the architect spec below. Operating rules:
@@ -219,31 +223,32 @@ disagreements, state what you checked before concluding the spec is sound.
 Verify the named APIs/formats/versions against the live dependencies before
 planning around them.
 
-PHASE 1 — Freeze shared contracts (schemas/interfaces) in artifacts/ first.
-After freeze they are read-only for everyone including you. The files under
-artifacts/gates/ are read-only at all times — editing them fails the slice
-regardless of results.
+PHASE 1 — Treat the shared contracts (schemas/interfaces) named in the spec, and
+the repo's existing public interfaces, as FROZEN: do not change them — other
+lanes depend on them. You have no access to the space's artifacts/ directory; the
+architect owns it. The ACCEPTANCE RUBRIC below is frozen — verify your work
+against it; never weaken or work around it.
 
 PHASE 2 — Build YOUR LANE ONLY: exactly the files listed in BOUNDARIES. You
 are one of several parallel lane agents working in isolated worktrees; files
 outside your lane belong to other agents — touching them fails your lane.
 No placeholder implementations — search the codebase before implementing;
-full implementations only. Verify your work by running the lane's gate
+full implementations only. Verify your work by running the rubric's gate
 commands and record the verbatim output. Do NOT commit and do NOT run any
 git write command (commit/add/branch/reset/checkout) — the architect commits and
 merges after verification, and verifies you made no commits. Do NOT delete lock
 files or escalate privileges if a command fails; record the exact error and
 continue. Give every potentially long command an explicit timeout; if a runtime
 will not start unattended (interactive prompt, server with no timeout), record
-the exact failure in your lane report and route around it — never busy-wait or
-retry in a loop. When done, write your lane report to
-artifacts/lanes/<slice>-<lane>.md with RAW results only — tables, numbers, command
-output — no interpretation, no "promising". Every status claim must be backed
-by a command result from this run. Keep the report compact — tables and
-numbers, not prose. End it with exactly one status line:
-STATUS: COMPLETE | COMPLETE_WITH_CONCERNS (list them) | BLOCKED (exact
-blocker + what you tried). Verdicts belong to the architect and the
-human. Persist until your lane is fully handled end-to-end; do not stop at
+the exact failure in your report and route around it — never busy-wait or
+retry in a loop. When done, write your report to the scratch file given to you,
+tmp/architect/<slice>-<lane>.report.md (an absolute path outside your worktree),
+with RAW results only — tables, numbers, command output — no interpretation, no
+"promising". Every status claim must be backed by a command result from this
+run. Keep the report compact — tables and numbers, not prose. End it with
+exactly one status line: STATUS: COMPLETE | COMPLETE_WITH_CONCERNS (list them) |
+BLOCKED (exact blocker + what you tried). Verdicts belong to the architect and
+the human. Persist until your lane is fully handled end-to-end; do not stop at
 analysis or partial fixes.
 
 === OBJECTIVE (and why) ===
@@ -261,7 +266,7 @@ analysis or partial fixes.
 === DISAGREEMENT RULINGS (from last session) ===
 ...
 
-=== ACCEPTANCE GATES (frozen at artifacts/gates/<slice>.md — read-only) ===
+=== ACCEPTANCE RUBRIC (frozen — the architect re-runs these to judge; verify against them, do not edit or work around) ===
 ...
 ```
 

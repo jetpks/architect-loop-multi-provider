@@ -3,8 +3,8 @@
 Read this only when a research trigger fires (see SKILL.md step 3). The fan-out
 uses `claude -p` (Sonnet 4.6) as parallel web-research subagents — read-only
 (no `Edit`/`Write`/`Bash`), built-in `WebSearch`/`WebFetch` — and the architect
-keeps all judgment: it verifies the load-bearing claims and writes the PRD
-itself.
+keeps all judgment: it verifies the load-bearing claims and writes the slice's
+**Grounds** section itself.
 
 ## Fan out
 
@@ -30,8 +30,8 @@ claude -p --model claude-sonnet-4-6 \
   > tmp/architect/research/<NN>-<topic>.md
 ```
 
-Write each research block to a `.prompt.md` file and feed it on stdin, never as
-a shell argument — a quote-mangling shell will corrupt a big block; the stdin
+Write each research-prompt to a `.prompt.md` file and feed it on stdin, never as
+a shell argument — a quote-mangling shell will corrupt a big prompt; the stdin
 redirect injects it verbatim.
 
 - Read-only by toolset: with only `Read,Grep,Glob,WebSearch,WebFetch` on the
@@ -45,11 +45,11 @@ redirect injects it verbatim.
   hard") — research is coverage work; deep thinking buys nothing here. Synthesis
   happens on the architect's side.
 - Scope each researcher to ≤5 subjects and put hard context rules in the
-  block (snippet over page; quote ≤2 sentences; stop the moment you can
+  research-prompt (snippet over page; quote ≤2 sentences; stop the moment you can
   answer) — a researcher that fills its context window dies without emitting
   its report. Bisect and re-dispatch dead lanes; don't re-run as-is.
 
-## Research block template
+## Research-prompt template
 
 ```
 You are a web research agent. Answer ONE question. Do not write code, do not
@@ -78,10 +78,12 @@ OUTPUT FORMAT — a markdown report:
    verify each: cross-check against a second independent source or the live
    dependency itself. Discard single-source low-confidence claims or mark them
    as open questions.
-3. Write `artifacts/prd/<slice>.md`: problem, decision + why, requirements,
-   non-goals, verified facts **with citations**, open questions for the human.
-   You write it — researchers gather, the architect judges and decides.
-4. Commit the PRD. Raw findings stay in `tmp/architect/research/` (gitignored) —
-   only the distilled, cited PRD is repo memory.
-5. The slice spec references the PRD instead of restating it; the builder's
-   PHASE 0 is expected to challenge the PRD's claims like anything else.
+3. Write the slice's **Grounds** section (`artifacts/<NN>-<slice>.md`): problem,
+   decision + why, requirements, non-goals, verified facts **with citations**,
+   open questions for the human. You write it — researchers gather, the architect
+   judges and decides.
+4. Commit Grounds (`slice <NN>: grounds`). Raw findings stay in
+   `tmp/architect/research/` (gitignored) — only the distilled, cited Grounds
+   section is repo memory.
+5. The slice's Contract cites Grounds instead of restating it; the builder's
+   PHASE 0 is expected to challenge Grounds' claims like anything else.

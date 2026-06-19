@@ -5,9 +5,15 @@ as architect/orchestrator and Sonnet 4.6 (run headless via `claude -p`, one tier
 down in the same harness) acts as builder, with the space as the memory.**
 This is the space-centric variant: mission memory lives in the space's
 `artifacts/` directory (committed to the space repo), scratch in `tmp/architect/`
-(gitignored), and the mission spans one or more repos under `repos/`. The
-`space architect` command family manages init, gate freezing, worktrees, and
-verification.
+(gitignored), and the mission spans one or more repos under `repos/`. Each slice
+is **one self-contained file**, `artifacts/<NN>-<slice>.md`, grown section by
+section (Grounds / Contract / Rubric / Builder Prompt / Builder Report /
+Verdict), **one commit per section** — the commits give the differentiation and
+git gives the change guarantees, so there are no separate `gates/`/`lanes/`/`prd/`
+directories. The `space architect` command family
+(`init`/`new`/`freeze`/`worktree`/`verify`/`status`) is the primary workspace
+mechanism, wrapping plain git: the freeze is the commit that adds the Rubric,
+worktrees are `git worktree`, and verification is `git diff` + `git log`.
 
 Researched June 2026 from Anthropic engineering posts, agent-harness research,
 and widely used community harness skills. Prescriptive claims below cite their
@@ -69,7 +75,7 @@ expensive model off the hot path where most of the tokens are spent.
 |---|---|---|---|
 | **Architect** | Opus 4.8 in Claude Code | minutes per work block | arbitration, judging raw evidence against frozen gates, next-slice specs, kill/continue calls |
 | **Builder** | Sonnet 4.6 via headless `claude -p` (high thinking budget default; architect may dial per slice) | hours per slice | implementation, lane agents, raw-results reporting |
-| **Memory** | the space: `artifacts/HANDOFF.md`, `artifacts/gates/`, `artifacts/lanes/`, space git history | permanent | everything; not in `artifacts/` = didn't happen |
+| **Memory** | the space: per-slice `artifacts/<NN>-<slice>.md` files (indexed by `artifacts/HANDOFF.md`) + space git history | permanent | everything; not in the committed artifacts = didn't happen |
 | **Human** | you | final | scope, irreversible calls, taste |
 
 The architect: Opus 4.8 runs in Claude Code with full reasoning; judgment over a
@@ -97,8 +103,8 @@ artifacts are the load-bearing memory"
 ([Effective Harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)).
 The architect refuses to judge results that exist only in chat output. In the
 space-centric model, committed = memory (everything under `artifacts/`),
-gitignored = scratch (`tmp/architect/`). Gates freeze as commits to the space
-repo via `space architect freeze SLICE`.
+gitignored = scratch (`tmp/architect/`). The Rubric freezes as the commit that
+adds the Rubric section to the slice file (`slice <NN>: rubric (freeze)`).
 Community handoff conventions apply: the next session must grok the handoff in
 under a minute; TL;DR first; exact paths/commands over prose
 ([handoff-memory conventions](https://lobehub.com/skills/neversight-learn-skills.dev-handoff-memory)).
@@ -108,11 +114,16 @@ Anthropic's three-agent harness has the generator and evaluator "negotiate a
 sprint contract" in shared files **before coding**, then freeze it
 ([Harness Design](https://www.anthropic.com/engineering/harness-design-long-running-apps)).
 The reward-hacking literature adds the mechanical requirement: keep graders and
-criteria out of the agent's editable blast radius. Implementation: gates are
-written to `artifacts/gates/<slice>.md` before dispatch, committed, and the
-architect's post-run verification step includes `git diff` on `artifacts/gates/` —
-**any builder edit to a gate file is an automatic slice FAIL**, regardless of
-results. Criteria are quoted verbatim when judging, never restated from memory.
+criteria out of the agent's editable blast radius. Implementation: the Rubric is
+written as the slice file's Rubric section before dispatch and committed (the
+freeze commit); the **builder never writes the slice file at all** — it reports
+to a scratch file the architect transcribes — so the Rubric is never in the
+builder's editable blast radius. The architect's post-run check is
+`git diff <freeze-sha> HEAD -- artifacts/<NN>-<slice>.md`: **any change to the
+frozen sections (Grounds/Contract/Rubric) is an automatic slice FAIL**,
+regardless of results — only Builder Prompt/Report/Verdict may be appended after
+the freeze. Criteria are quoted verbatim when judging (read from the freeze
+commit), never restated from memory.
 
 ### R3. The builder never grades its own work — and neither does the architect alone
 Two-stage review, fresh contexts, is the most-replicated community pattern
@@ -182,11 +193,13 @@ overhead dominates ([Intility engineering](https://engineering.intility.com/arti
 [MindStudio worktrees](https://www.mindstudio.ai/blog/git-worktrees-parallel-ai-coding-agents)).
 **The architect — not the builder — owns the fan-out.** The spec splits the
 slice into 1–4 lanes whose file sets are checked for overlap; each lane is an
-isolated worktree running its own `claude -p` process, writing its own lane
-report (`artifacts/lanes/`); the architect runs per-lane boundary checks (`git status`
-must show only declared files; `git log <freeze>..` must be empty since Claude
-Code has no sandbox to block commits), commits each passing lane, and merges
-sequentially with gate smoke-runs after every merge. Keeping fan-out in the
+isolated worktree running its own `claude -p` process, writing its own raw report
+to scratch (`tmp/architect/<slice>-<lane>.report.md`, which the architect
+transcribes verbatim into the slice file's Builder Report); the architect runs
+per-lane boundary checks (`git status` must show only declared files;
+`git log <repo-base>..` must be empty since Claude Code has no sandbox to block
+commits), commits each passing lane, and merges sequentially with gate smoke-runs
+after every merge. Keeping fan-out in the
 architect rather than delegating it to a builder-internal subagent feature makes
 a merge conflict a detectable spec defect instead of a silent hazard, and
 isolates per-lane failure (discard one lane, not the slice).
@@ -255,16 +268,18 @@ Facts the skill encodes:
 - **Thinking budget** is set in the prompt, not by a flag: the escalation
   keywords (`think` < `think hard` < `think harder` < `ultrathink`) raise it and
   `MAX_THINKING_TOKENS` floors it. Builders default high; researchers stay modest.
-- **Prompt input is stdin** — the block is written to a file and fed on stdin
-  (`< block.md`), sidestepping shells (especially PowerShell) that mangle quotes
-  in big prompt blocks. Claude Code has no `@file` and no `-C`/working-dir flag,
-  so per-lane dispatch `cd`s into the worktree.
+- **Prompt input is stdin** — the lane-prompt is written to a file and fed on
+  stdin (`< <slice>-<lane>.prompt.md`), sidestepping shells (especially PowerShell)
+  that mangle quotes in big prompts. Claude Code has no `@file` and no
+  `-C`/working-dir flag, so per-lane dispatch `cd`s into the worktree.
 - **Telemetry / output**: `--output-format stream-json --verbose` streams JSONL
   events to stdout (redirect to a run-log for liveness/stall checks); the default
   `text` format makes stdout just the final result (used to capture a
-  researcher's report). The builder's deliverable is the lane report it writes
-  with its `Write` tool, and the contract is the `STATUS:` line convention, not a
-  schema. `--max-turns N` caps the agent loop as a backstop.
+  researcher's report). The builder's deliverable is the raw report it writes
+  with its `Write` tool to a scratch file (`tmp/architect/<slice>-<lane>.report.md`,
+  which the architect transcribes into the slice file's Builder Report), and the
+  contract is the `STATUS:` line convention, not a schema. `--max-turns N` caps
+  the agent loop as a backstop.
 - **Session continuity**: dispatch in the lane's worktree and follow up with
   `claude -p --continue "<follow-up>"` — sessions are scoped per directory, so
   `--continue` is deterministic even with parallel lanes. (`--session-id <uuid>`
@@ -274,7 +289,7 @@ Facts the skill encodes:
   get them as their only outward tools (`WebFetch(domain:…)` allow rules pin
   domains in injection-sensitive repos).
 - **`CLAUDE.md`** is the builder's standing context — Claude Code loads it
-  root-down automatically. The loop's PHASE rules live in the dispatch block so
+  root-down automatically. The loop's PHASE rules live in the lane-prompt so
   they version with the skill; repo-specific build/test commands belong in
   `CLAUDE.md`. (Claude Code does **not** auto-read `AGENTS.md`; an `@AGENTS.md`
   import in `CLAUDE.md` pulls it in if the repo keeps its docs there.)
@@ -284,7 +299,7 @@ Facts the skill encodes:
   in layers: a runtime first line (`--disallowedTools 'Bash(git commit:*)' …`,
   which a builder can still shell out around via `sh -c`), worktree isolation,
   and the authoritative architect check after the run — `git -C <worktree> log
-  <freeze>..` must be empty and `git status` must show only declared files. A
+  <repo-base>..` must be empty and `git status` must show only declared files. A
   commit = a tampered worktree → reset and re-dispatch.
 
 Canonical dispatch:
@@ -295,8 +310,8 @@ claude -p --model claude-sonnet-4-6 \
   --allowedTools 'Read,Edit,Write,Grep,Glob,Bash,WebSearch,WebFetch' \
   --disallowedTools 'Bash(git commit:*),Bash(git push:*),Bash(git reset:*)' \
   --output-format stream-json --verbose --max-turns 200 \
-  < tmp/architect/<slice>-<NN>.block.md \
-  > tmp/architect/<slice>-<NN>.last-run.jsonl
+  < tmp/architect/<slice>-<lane>.prompt.md \
+  > tmp/architect/<slice>-<lane>.last-run.jsonl
 ```
 
 Billing note: headless `claude -p` draws on the Agent SDK credit pool on your
@@ -309,26 +324,26 @@ spend that pool. The architect runs as your interactive Claude Code session.
 ## 5. The loop, end to end
 
 ```
-┌──────────────────────────── one work block ────────────────────────────────┐
-│                                                                            │
-│  /architect                                                                │
-│   0. Ground: CLAUDE.md/AGENTS.md → verification gate → artifacts/HANDOFF.md│
-│   1. Arbitrate: every open disagreement → ACCEPT/REJECT/MODIFY + why       │
-│   2. Judge: run gates yourself; verdict per gate vs verbatim frozen text   │
-│      PASS / FAIL / INVALID → kill / continue                               │
-│   3. Spec next slice: objective + output format + tool guidance +          │
-│      boundaries + out-of-scope; freeze gates via `space architect freeze`  │
-│      (commits artifacts/gates/<slice>.md to the space repo)                │
-│   4. Dispatch: 1-4 parallel claude -p lanes, one worktree each             │
-│      (`space architect worktree add`; background, fresh context).           │
-│      Per lane: PHASE 0 disagree-or-fail → PHASE 1 contracts frozen →      │
-│      PHASE 2 build own files only → raw lane report (artifacts/lanes/)     │
-│   5. Post-flight: `space architect verify SLICE` reports per-lane;         │
-│      architect commits + merges lanes with gate smoke-runs; verdict        │
-│      waits for next block                                                  │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-         space artifacts/ carries everything across the gap between blocks
+one work block (/architect):
+
+  0. Ground    — CLAUDE.md/AGENTS.md → verification gate → artifacts/HANDOFF.md
+                 + the in-flight slice file
+  1. Arbitrate — every open disagreement → ACCEPT/REJECT/MODIFY + why (→ Verdict)
+  2. Judge     — run the gates yourself; per-gate PASS/FAIL/INVALID vs the
+                 verbatim frozen Rubric → KILL/CONTINUE (→ Verdict)
+  3. Spec      — write Grounds (if researched) + Contract + Rubric into
+                 artifacts/<NN>-<slice>.md; the commit adding the Rubric is the
+                 freeze ❄ (one commit per section)
+  4. Dispatch  — 1-4 parallel `claude -p` lanes, one git worktree each
+                 (background, fresh context); record each lane-prompt in Builder
+                 Prompt. Per lane: PHASE 0 disagree-or-fail → PHASE 1 shared
+                 contracts frozen → PHASE 2 build own files → raw report to
+                 tmp/architect/ scratch
+  5. Post-flight — architect transcribes each scratch report → Builder Report,
+                 checks bounds + no builder commits, merges lanes with gate
+                 smoke-runs; the Verdict waits for the next work block
+
+The space's artifacts/ carries everything across the gap between work blocks.
 ```
 
 The human reads the handoff between blocks and overrides anything. Architect
@@ -341,8 +356,8 @@ breath (fresh-context judgment, R3).
 Between judging and speccing, the architect may run a research phase: 3–5
 parallel read-only `claude -p` researchers (built-in `WebSearch`/`WebFetch`),
 each answering one narrow non-overlapping question, with the architect adversarially
-verifying load-bearing claims and writing `artifacts/prd/<slice>.md` itself. Design
-decisions behind it:
+verifying load-bearing claims and writing the slice's **Grounds** section itself.
+Design decisions behind it:
 
 - **Trigger-gated, not always-on.** "Research if you think it helps" either
   fires constantly or never; instead the skill names three concrete triggers
@@ -367,9 +382,9 @@ decisions behind it:
   Multi-angle decomposition (docs / changelogs / failure reports /
   alternatives) follows the multi-modal-sweep pattern from
   [Anthropic's multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system).
-- **The PRD is repo memory; raw findings are not.** `artifacts/prd/<slice>.md` is
-  committed with citations (R1); raw researcher output stays in the gitignored
-  `tmp/architect/research/`. The builder's PHASE 0 challenges the PRD like any
+- **Grounds is repo memory; raw findings are not.** The slice's Grounds section
+  is committed with citations (R1); raw researcher output stays in the gitignored
+  `tmp/architect/research/`. The builder's PHASE 0 challenges Grounds like any
   other spec input.
 
 ### Two skills: `/architect` and `/architect-research`
@@ -456,13 +471,13 @@ became a tactics library the orchestrator draws from when designing lanes:
 
 | Failure mode | Mitigation in this design |
 |---|---|
-| Reward hacking / gate tampering | Gates committed pre-dispatch in `artifacts/gates/`; post-flight `git diff` check; tampering = automatic FAIL (R2) |
+| Reward hacking / gate tampering | Rubric committed pre-dispatch (the freeze commit); builder never writes the slice file (reports to scratch); post-flight `git diff <freeze-sha> HEAD` on frozen sections; any change = automatic FAIL (R2) |
 | Builder grades own work | Raw-results-only handoff; architect runs gates itself; cross-tier review (R3, R10) |
 | Goalpost moving | Verbatim gate quoting; gates never edited after results; missing gate = spec defect, frozen for next slice only (R2, R4) |
 | Scope creep | Explicit out-of-scope list per slice; silent scope additions = builder failure; architect flags creep by name (R5, R6) |
 | Context rot | Architect context holds judgment only; fresh builder process per slice; space artifacts/ is the memory (R1, R7) |
 | Merge conflicts between lanes | Disjoint-file-set lanes, ≤3–4, worktrees, one reviewer lane gating merges (R8) |
-| Placeholder implementations | Gate commands are end-to-end and executable; "search before implementing; no placeholder code" in the builder block (R4) |
+| Placeholder implementations | Gate commands are end-to-end and executable; "search before implementing; no placeholder code" in the lane-prompt (R4) |
 | Broken repo after a long run | One slice per iteration; commit per lane; `git reset` + re-dispatch over rescue prompting (R7) |
 | Fabricated status reports | Every status claim audited against a tool result, both sides (R10) |
 | Gate-passing but unmergeable work | Judge reads the diff against spec intent, not gate output alone — METR: 38% test-pass, 0 mergeable as-is; cross-tier review for high-stakes (R3, R4) |
@@ -478,9 +493,9 @@ became a tactics library the orchestrator draws from when designing lanes:
 - **Not a general-purpose orchestrator.** Your `/orchestrator` skill covers
   single-model plan→delegate→review inside one Claude Code session. This skill is
   the two-model, separate-process loop — Opus judges, a fresh `claude -p` Sonnet
-  builds, gates freeze in the space repo via `space architect freeze`; it imports `/orchestrator`'s grounding,
-  delegation-contract, and verify-it-yourself rules rather than duplicating the
-  whole pipeline.
+  builds, the Rubric freezes in the space repo as a commit to the slice file; it
+  imports `/orchestrator`'s grounding, delegation-contract, and verify-it-yourself
+  rules rather than duplicating the whole pipeline.
 - **Not an autonomous infinite loop.** The human sits between work blocks by
   design — that's where kill/continue authority lives. If you want unattended
   multi-block runs, the architect step too can run as a scheduled `claude -p`
