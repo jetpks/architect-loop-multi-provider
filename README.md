@@ -18,6 +18,7 @@ that directory.
 |---|---|---|---|---|
 | [`fable-gpt-55`](fable-gpt-55) | Claude Fable | GPT-5.5 Codex | `codex exec` (xhigh) | ChatGPT plan 5-hour / weekly quotas |
 | [`opus-48-sonnet-46`](opus-48-sonnet-46) | Opus 4.8 | Sonnet 4.6 | headless `claude -p` | Agent SDK credit pool (same Claude plan) |
+| [`opus-48-sonnet-46-space`](opus-48-sonnet-46-space) | Opus 4.8 | Sonnet 4.6 | `space architect` + headless `claude -p` | Agent SDK credit pool; space-centric multi-repo |
 
 Each directory is named `<architect>-<builder>`. More provider variants land as
 they're validated.
